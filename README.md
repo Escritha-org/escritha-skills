@@ -1,184 +1,135 @@
-# escritha-standards skill
+# escritha-skills
 
-> Standards and conventions for the [Escritha](https://escritha.com) project.  
-> Works with **Claude Code**, **Cursor**, **Codex**, and any agent that supports the `SKILL.md` format.
-
----
-
-## What this skill does
-
-This skill enforces consistent code patterns across all three Escritha modules:
-
-| Module | Stack |
-|---|---|
-| `escritha-api` | NestJS · Prisma · PostgreSQL |
-| `escritha-app` | React · Vite · Zustand · Tailwind |
-| `escritha-book` | FastAPI · Python · PGVector |
-
-Once installed, your AI agent automatically reads the relevant standards before creating modules, endpoints, components, DTOs, stores, migrations, and more — no manual prompting needed.
+> Single source of truth for code standards across all Escritha repositories.
+> Edit here → sync → commit in each repo. Every developer gets the rules automatically on clone.
 
 ---
 
-## Requirements
+## Repository structure
 
-- **Node.js** 18+ (for `npx`)
-- One of: Claude Code, Cursor, Codex CLI, or any agent that supports `SKILL.md`
+```
+escritha-skills/
+├── cursor/
+│   ├── api.mdc          ← Cursor rule for escritha-api  (NestJS + Prisma)
+│   ├── app.mdc          ← Cursor rule for escritha-app  (React + Vite + Zustand)
+│   └── book.mdc         ← Cursor rule for escritha-book (FastAPI + Python)
+├── skills/
+│   └── escritha-skill-en/
+│       ├── SKILL.md
+│       └── references/
+│           ├── api.md
+│           ├── app.md
+│           └── book.md
+├── sync-rules.sh        ← copies .mdc files into each repo
+└── README.md
+```
 
 ---
 
-## Installation
+## How this works
 
-### Option 1 — Project install (recommended)
+Each repo (`escritha-api`, `escritha-app`, `escritha-book`) contains a `.cursor/rules/escritha-standards.mdc` file that the Cursor AI reads automatically. The source of those files lives here in `escritha-skills/cursor/`. When you update the standards, you run one script and commit in each repo.
 
-Installs the skill into `.claude/skills/` inside your repo. Everyone who clones the project gets it automatically.
+```
+escritha-skills/cursor/api.mdc
+        │
+        └──→  escritha-api/.cursor/rules/escritha-standards.mdc  (git-tracked)
+                escritha-app/.cursor/rules/escritha-standards.mdc (git-tracked)
+                escritha-book/.cursor/rules/escritha-standards.mdc (git-tracked)
+```
+
+---
+
+## First-time setup (do this once)
+
+### 1. Clone all four repos as siblings
+
+Your local folder layout must look like this:
+
+```
+~/projects/
+├── escritha-api/
+├── escritha-app/
+├── escritha-book/
+└── escritha-skills/     ← clone this repo here
+```
+
+If they are in different locations, edit the paths at the top of `sync-rules.sh`.
+
+### 2. Run the sync script
 
 ```bash
-# from the root of any escritha module (escritha-api, escritha-app, or escritha-book)
-npx skills add YOUR_ORG/escritha-skills --skill escritha-standards
+cd escritha-skills
+chmod +x sync-rules.sh
+./sync-rules.sh
 ```
 
-> Replace `YOUR_ORG/escritha-skills` with the actual GitHub path where this skill is hosted.
+You will see:
+```
+🔄  Syncing Cursor rules from escritha-skills...
+✅  escritha-api  →  .cursor/rules/escritha-standards.mdc
+✅  escritha-app  →  .cursor/rules/escritha-standards.mdc
+✅  escritha-book →  .cursor/rules/escritha-standards.mdc
 
----
+🎉  Done!
+```
 
-### Option 2 — Install from a local path
-
-If you have the skill folder locally (e.g. after cloning this repo):
+### 3. Commit the generated files in each repo
 
 ```bash
-npx skills add ./escritha-skill-en
+cd ../escritha-api  && git add .cursor/rules/ && git commit -m "chore: add cursor standards rule"
+cd ../escritha-app  && git add .cursor/rules/ && git commit -m "chore: add cursor standards rule"
+cd ../escritha-book && git add .cursor/rules/ && git commit -m "chore: add cursor standards rule"
 ```
+
+From this point on, any developer who clones one of those repos gets the rules automatically — no extra setup needed.
 
 ---
 
-### Option 3 — Global install
+## Enabling the rule in Cursor
 
-Makes the skill available across **all your projects**, not just Escritha.
+The `.mdc` file is picked up automatically by Cursor when it exists in `.cursor/rules/`.
+You can verify it is active:
 
-```bash
-npx skills add YOUR_ORG/escritha-skills --skill escritha-standards --global
-```
+1. Open the project in Cursor
+2. Press `Cmd+Shift+P` → type **Cursor Settings**
+3. Go to the **Rules** tab
+4. You should see `escritha-standards` listed and enabled
 
----
-
-### Option 4 — Target a specific agent
-
-```bash
-# Claude Code only
-npx skills add YOUR_ORG/escritha-skills --skill escritha-standards -a claude-code
-
-# Cursor only
-npx skills add YOUR_ORG/escritha-skills --skill escritha-standards -a cursor
-
-# Both at once
-npx skills add YOUR_ORG/escritha-skills --skill escritha-standards -a claude-code -a cursor
-```
+If it shows as disabled, click the toggle to enable it.
 
 ---
 
-### Option 5 — Manual install (no npx)
+## Updating the standards
 
-Copy the skill folder directly into your project:
+1. Edit the relevant file in `escritha-skills/cursor/` (e.g. `api.mdc`)
+2. Run `./sync-rules.sh` from the `escritha-skills` root
+3. Commit and push in each affected repo
+4. Open a PR in `escritha-skills` so the change is reviewed and tracked
 
-```bash
-# project-level
-mkdir -p .claude/skills
-cp -r escritha-skill-en .claude/skills/escritha-standards
-
-# or global
-mkdir -p ~/.claude/skills
-cp -r escritha-skill-en ~/.claude/skills/escritha-standards
-```
+**Never edit the `.mdc` files directly inside `escritha-api`, `escritha-app`, or `escritha-book`** — those are generated files. Changes made there will be overwritten the next time `sync-rules.sh` runs.
 
 ---
 
-## Verify installation
+## New developer checklist
 
-```bash
-npx skills list
-```
-
-You should see `escritha-standards` in the output.
-
----
-
-## Skill priority
-
-When the same skill name exists in multiple locations, the following priority applies (highest wins):
-
-```
-enterprise > personal (~/.claude/skills) > project (.claude/skills)
-```
-
-For most teams, **project-level install is the right choice** — the skill is versioned alongside the code and available to every contributor automatically.
+- [ ] Clone `escritha-api`, `escritha-app`, `escritha-book`, and `escritha-skills` as siblings
+- [ ] Open the Cursor workspace (`.code-workspace` file if available, or open the folder you want)
+- [ ] Verify the rule is active in Cursor Settings → Rules → `escritha-standards`
+- [ ] Done — the AI will now follow project standards automatically
 
 ---
 
-## Updating
+## FAQ
 
-```bash
-npx skills update escritha-standards
-```
+**Do I need to run `sync-rules.sh` every time I open the project?**
+No. The `.mdc` files are already committed in each repo. You only need to run the script when the standards change.
 
----
+**Can I add my own personal rules on top of these?**
+Yes. In Cursor Settings → Rules → User Rules, you can add personal preferences. They apply to all your projects and stack on top of the project rule.
 
-## Uninstalling
+**The rule exists but the AI is not following it. What do I do?**
+Open a new chat in Cursor (rules are loaded per session). If it still does not work, go to Cursor Settings → Rules and make sure the toggle next to `escritha-standards` is on.
 
-```bash
-# Interactive (pick from list)
-npx skills remove
-
-# By name
-npx skills remove escritha-standards
-
-# From global scope
-npx skills remove --global escritha-standards
-```
-
----
-
-## Skill structure
-
-```
-escritha-standards/
-├── SKILL.md                  ← entry point, global rules, module routing
-└── references/
-    ├── api.md                ← NestJS patterns (controllers, DTOs, Prisma, auth)
-    ├── app.md                ← React patterns (components, Zustand, apiFetch, Tailwind)
-    └── book.md               ← FastAPI patterns (endpoints, Pydantic, RAG service)
-```
-
-The skill uses **progressive disclosure**: `SKILL.md` stays lightweight and directs the agent to load only the reference file relevant to the current module. This keeps context clean and focused.
-
----
-
-## For Claude.ai users (non-Claude Code)
-
-If you use Claude via the web interface instead of Claude Code, install skills through the UI:
-
-1. Go to **Settings → Capabilities** and enable **Code execution and file creation**
-2. Go to **Customize → Skills**
-3. Upload the `escritha-standards.skill` file (packaged version)
-4. Toggle it on
-
-To generate the `.skill` package from the source folder:
-
-```bash
-npx skills pack ./escritha-skill-en
-```
-
----
-
-## Contributing
-
-To update the standards:
-
-1. Edit the relevant file inside `references/` (or `SKILL.md` for global rules)
-2. Test by running a few prompts in your agent and checking that it follows the updated patterns
-3. Open a PR — changes take effect for everyone after merging and running `npx skills update`
-
----
-
-## Security note
-
-Only install skills from trusted sources. This skill contains no executable scripts — it is purely instructional markdown read by the agent at task time.
+**I updated `api.mdc` but the AI in `escritha-app` still uses the old rules.**
+Each `.mdc` is repo-specific. Changing `api.mdc` only affects `escritha-api`. Update `app.mdc` and re-run `./sync-rules.sh` for `escritha-app`.

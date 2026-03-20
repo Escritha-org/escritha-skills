@@ -1,0 +1,196 @@
+---
+description: >
+  Use this rule ALWAYS when creating, editing, reviewing, or refactoring any code in
+  escritha-book. Trigger for: FastAPI endpoints, Pydantic schemas, RAG service logic,
+  PGVector store, configuration via pydantic-settings, LLM prompt templates, and any
+  architecture question about the Python microservice.
+  If the developer mentions ingest, query, embeddings, chunks, RAG, pgvector,
+  rag_service, or document ingestion — apply these rules immediately.
+globs:
+  - "app/**/*.py"
+  - "tests/**/*.py"
+alwaysApply: false
+---
+
+# escritha-book — Code Standards (FastAPI + Python + PGVector)
+
+## File responsibilities
+
+```
+app/
+├── config.py          # Settings via pydantic-settings — all env vars live here
+├── main.py            # FastAPI app + endpoints + CORS + error handlers
+├── models.py          # ALL Pydantic request/response schemas
+├── prompts.py         # ALL LLM prompt strings — never inline in services
+├── rag_service.py     # ALL business logic — ingestion, chunking, embeddings, querying
+└── pgvector_store/
+    └── store.py       # Vector store implementation (LlamaIndex/PGVector)
+```
+
+The single most important rule: **business logic never lives in `main.py`**. Endpoints receive a request, delegate to `rag_service`, and return a typed response. That is all.
+
+---
+
+## Global naming conventions
+
+- `snake_case` for everything: files, variables, functions, fields
+- `PascalCase` for classes only
+- Type hints on every function signature
+- Code, comments, and docstrings: **English**
+- Messages shown to end users: **Portuguese (pt-BR)**
+
+Import order (PEP8):
+```python
+# 1. stdlib
+import os
+from pathlib import Path
+
+# 2. third-party
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+
+# 3. local
+from app.config import get_settings
+from app.models import QueryRequest
+```
+
+---
+
+## Creating a new endpoint
+
+```python
+# app/main.py
+from app.models import MyRequest, MyResponse
+
+@app.post(
+    "/my-endpoint",
+    response_model=MyResponse,
+    summary="Short description of the endpoint",
+)
+async def my_endpoint(request: MyRequest) -> MyResponse:
+    """Detailed description of what the endpoint does."""
+    try:
+        result = await _rag_service.my_method(request.field)
+        return MyResponse(result=result)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+```
+
+- Always define `response_model` in the decorator
+- Use `async def` for all I/O-bound endpoints
+- Use `HTTPException` for expected errors — never return error dicts manually
+- Delegate all logic to `rag_service` — the endpoint is only a thin HTTP layer
+
+---
+
+## Pydantic schema pattern
+
+```python
+# app/models.py
+from pydantic import BaseModel, Field
+from typing import Optional, List
+
+class MyRequest(BaseModel):
+    required_field: str = Field(..., description="Field description")
+    optional_field: Optional[str] = Field(None, description="Optional field")
+    limit: int = Field(10, ge=1, le=100, description="Between 1 and 100")
+
+class MyResponse(BaseModel):
+    success: bool
+    data: List[str]
+    message: Optional[str] = None
+```
+
+- All new schemas go in `models.py` — never define schemas inline in `main.py`
+- Every field must have `Field(...)` with a `description`
+- Use `Optional[T]` + `Field(None)`, not `T | None`
+- Never return raw dicts — always return a `BaseModel` instance
+
+---
+
+## Configuration (Settings)
+
+```python
+# app/config.py
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    DATABASE_URL: str
+    PGVECTOR_SCHEMA: str = "public"
+    PGVECTOR_TABLE: str = "rag_documents"
+    MY_NEW_PARAM: str = "default_value"   # add new params here
+
+    class Config:
+        env_file = ".env"
+
+def get_settings() -> Settings:
+    return Settings()
+```
+
+Never access `os.environ` directly anywhere in the codebase. Always use `get_settings()`.
+
+---
+
+## HTTP status codes
+
+| Situation | Code |
+|---|---|
+| Successful creation | 201 |
+| Generic success | 200 |
+| Invalid input | 400 |
+| Unsupported format | 415 |
+| Not found | 404 |
+| Internal error | 500 |
+
+---
+
+## Prompt templates
+
+All LLM prompt strings live in `prompts.py`:
+
+```python
+# app/prompts.py
+MY_FEATURE_PROMPT = """
+You are an academic writing assistant.
+Context: {context}
+Question: {question}
+"""
+```
+
+Never write prompt strings inline inside `rag_service.py` or `main.py`.
+
+---
+
+## Database (PGVector)
+
+The real table name is derived at runtime:
+```python
+self._table_name = f"data_{settings.pgvector_table}"
+# default: "data_rag_documents"
+```
+
+The `vector` extension is guaranteed on startup — do not call `CREATE EXTENSION` elsewhere.
+When adding new fields or tables, use an explicit SQL migration and update `store.py` accordingly.
+
+---
+
+## Tests
+
+- Framework: **pytest** + **httpx**
+- File: `tests/test_<feature>.py`
+- Mock `RAGService` in endpoint tests
+
+```python
+# tests/test_query.py
+import pytest
+from httpx import AsyncClient
+from app.main import app
+
+@pytest.mark.anyio
+async def test_query_endpoint():
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        response = await client.post("/query", json={"query": "test", "limit": 5})
+    assert response.status_code == 200
+```

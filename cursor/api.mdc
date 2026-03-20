@@ -1,0 +1,268 @@
+---
+description: >
+  Use this rule ALWAYS when creating, editing, reviewing, or refactoring any code in
+  escritha-api. Trigger for: NestJS modules, controllers, services, DTOs, guards,
+  interceptors, Prisma schema, migrations, auth, webhooks, and any architecture question.
+  If the developer mentions workspace, project, section, pipeline, ciclo, payment,
+  orientador, or orientando — apply these rules immediately.
+globs:
+  - "**/*.ts"
+  - "**/*.spec.ts"
+  - "prisma/schema.prisma"
+  - "prisma/migrations/**"
+alwaysApply: false
+---
+
+# escritha-api — Code Standards (NestJS + Prisma + PostgreSQL)
+
+## Folder structure
+
+```
+src/
+├── core/               # Cross-cutting concerns: guards, decorators, filters, global interceptors
+│   ├── decorators/
+│   ├── filters/
+│   ├── guards/
+│   └── interceptors/
+├── shared/             # Resources shared across modules
+│   ├── constants/      # APP_CONSTANTS and similar
+│   ├── dto/            # Generic DTOs (PaginationDto, BaseResponseDto)
+│   ├── enums/          # Global enums
+│   ├── interfaces/     # ApiResponse, ErrorResponse, PaginatedResponse
+│   ├── prisma/         # PrismaService
+│   ├── types/          # Auxiliary types (e.g. request-with-user.type)
+│   └── utils/          # Global utility functions
+├── features/           # Large, composed feature sets
+│   └── edition/        # e.g. compilation, conversion, section, pdf, footnote
+└── <domain>/           # Each domain has its own folder
+    ├── dto/
+    ├── <domain>.module.ts
+    ├── <domain>.controller.ts
+    └── <domain>.service.ts
+```
+
+### Where to put things
+- Logic reused across multiple modules → `src/shared/utils/`
+- Guard/interceptor/filter applied globally → `src/core/`
+- DTO used by only one module → `src/<domain>/dto/`
+- DTO used by multiple modules → `src/shared/dto/`
+- Large feature with several sub-responsibilities → `src/features/<name>/`
+
+---
+
+## Global naming conventions
+
+- **Folders and files**: `kebab-case`
+- **Classes and interfaces**: `PascalCase`
+- **Functions and variables**: `camelCase`
+- **Global constants**: `UPPER_SNAKE_CASE`
+- **Never** use obscure abbreviations — prefer full, descriptive names
+- Code, comments, and file names: **English**
+- Error messages shown to end users: **Portuguese (pt-BR)**
+
+---
+
+## Known inconsistencies — never replicate these
+
+1. Do **not** use `@UseGuards(AuthGuard('jwt'))` manually — `JwtAuthGuard` is already global via `CoreModule`
+2. Do **not** mix `AuthGuard('jwt')` with `JwtAuthGuard` in the same controller
+3. Prisma fields must use `snake_case` in the schema with `@map()` for TypeScript camelCase compatibility
+
+---
+
+## Creating a new domain module
+
+Required structure:
+
+```
+src/<kebab-case-name>/
+├── dto/
+│   ├── create-<name>.dto.ts
+│   └── update-<name>.dto.ts
+├── <name>.module.ts
+├── <name>.controller.ts
+├── <name>.service.ts
+└── index.ts            ← barrel export
+```
+
+`index.ts` must re-export everything:
+```ts
+export * from './<name>.module';
+export * from './<name>.service';
+export * from './<name>.controller';
+```
+
+Register the module in `src/app.module.ts` under the correct section (feature, admin, or cross-cutting).
+
+---
+
+## Controller pattern
+
+```ts
+@Controller('my-resource')
+export class MyResourceController {
+  constructor(private readonly myResourceService: MyResourceService) {}
+
+  @Get()
+  findAll(@Req() req: RequestWithUser) {
+    return this.myResourceService.findAll(req.user.id);
+  }
+
+  @Post()
+  create(@Body() dto: CreateMyResourceDto, @Req() req: RequestWithUser) {
+    return this.myResourceService.create(dto, req.user.id);
+  }
+}
+```
+
+- **Do not** apply `@UseGuards(AuthGuard('jwt'))` manually — `JwtAuthGuard` is already global
+- Use `@Public()` for routes that do not require authentication
+
+---
+
+## DTO pattern
+
+```ts
+import { IsString, IsNotEmpty, IsOptional, IsUUID } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+
+export class CreateMyResourceDto {
+  @ApiProperty({ description: 'Field description' })
+  @IsString()
+  @IsNotEmpty()
+  name: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsUUID()
+  workspaceId?: string;
+}
+```
+
+- Always use `class-validator` (never validate manually in the service)
+- Always annotate with `@ApiProperty()` for Swagger
+- Never reuse the same DTO for create and update
+- `UpdateDto` may extend `PartialType(CreateDto)` from `@nestjs/mapped-types`
+
+---
+
+## Success response pattern
+
+The global `TransformInterceptor` wraps every response automatically:
+```json
+{ "success": true, "data": <return value>, "timestamp": "..." }
+```
+
+Never wrap the return manually in the controller:
+```ts
+// ✅ Correct
+return this.service.create(dto);
+
+// ❌ Wrong
+return { success: true, data: this.service.create(dto) };
+```
+
+Exception: webhook routes and redirects using `@Res()` — keep custom responses only where they already exist.
+
+---
+
+## Error pattern
+
+```ts
+import { NotFoundException } from '@nestjs/common';
+
+if (!project) {
+  throw new NotFoundException('Projeto não encontrado');
+}
+```
+
+`AllExceptionsFilter` (global) formats all errors as:
+```json
+{ "statusCode": 404, "timestamp": "...", "path": "...", "method": "...", "message": ["..."] }
+```
+
+---
+
+## Authentication and authorization
+
+### Public routes
+```ts
+import { Public } from '../core/decorators/public.decorator';
+
+@Public()
+@Post('login')
+login(@Body() dto: LoginDto) { ... }
+```
+
+### Role-based
+```ts
+@Roles(Role.MASTER)
+@Get('admin/report')
+getReport() { ... }
+```
+
+### Workspace-based
+```ts
+@WorkspaceRoles(WorkspaceRole.OWNER, WorkspaceRole.EDITOR)
+@Put(':id')
+update(...) { ... }
+```
+
+`WorkspaceRolesGuard` extracts `workspaceId` from `params`, `query`, `body`, or `x-workspace-id` header.
+
+---
+
+## Database (Prisma)
+
+Inject via constructor:
+```ts
+constructor(private readonly prisma: PrismaService) {}
+```
+
+Schema conventions:
+```prisma
+model Project {
+  id          String   @id @default(uuid())
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  workspaceId String   @map("workspace_id")
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  @@map("projects")
+}
+```
+
+Migrations:
+- Generate via CLI: `npx prisma migrate dev --name description_in_snake_case`
+- Never edit migrations already applied in production
+
+---
+
+## Exports and imports
+
+```ts
+// ✅ Named exports only, never default
+export class ProjectService { ... }
+
+// ✅ Relative imports within the same module
+import { CreateProjectDto } from './dto/create-project.dto';
+
+// ✅ Use shared barrel for global utilities
+import { PrismaService } from '../shared';
+```
+
+---
+
+## Tests
+
+- File: `<name>.spec.ts` next to the file under test
+- Framework: Jest + `@nestjs/testing`
+- Always mock `PrismaService` in service tests
+
+```ts
+const module = await Test.createTestingModule({
+  providers: [
+    MyResourceService,
+    { provide: PrismaService, useValue: { myModel: { findMany: jest.fn() } } },
+  ],
+}).compile();
+```
