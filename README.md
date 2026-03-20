@@ -1,7 +1,7 @@
 # escritha-skills
 
-> Single source of truth for code standards across all Escritha repositories.
-> Edit here → sync → commit in each repo. Every developer gets the rules automatically on clone.
+> Single source of truth for code standards across all Escritha repositories.  
+> Contains Cursor Agent Skills and Cursor Rules for `escritha-api`, `escritha-app`, and `escritha-book`.
 
 ---
 
@@ -10,53 +10,99 @@
 ```
 escritha-skills/
 ├── cursor/
-│   ├── api.mdc          ← Cursor rule for escritha-api  (NestJS + Prisma)
-│   ├── app.mdc          ← Cursor rule for escritha-app  (React + Vite + Zustand)
-│   └── book.mdc         ← Cursor rule for escritha-book (FastAPI + Python)
+│   ├── api.mdc              ← Cursor Rule for escritha-api  (NestJS + Prisma)
+│   ├── app.mdc              ← Cursor Rule for escritha-app  (React + Vite + Zustand)
+│   └── book.mdc             ← Cursor Rule for escritha-book (FastAPI + Python)
 ├── skills/
-│   └── escritha-skill-en/
+│   └── escritha-standards/  ← Cursor Agent Skill (folder name MUST match the name in SKILL.md)
 │       ├── SKILL.md
 │       └── references/
 │           ├── api.md
 │           ├── app.md
 │           └── book.md
-├── sync-rules.sh        ← copies .mdc files into each repo
+├── sync-rules.sh            ← copies .mdc files into each repo
 └── README.md
 ```
 
----
-
-## How this works
-
-Each repo (`escritha-api`, `escritha-app`, `escritha-book`) contains a `.cursor/rules/escritha-standards.mdc` file that the Cursor AI reads automatically. The source of those files lives here in `escritha-skills/cursor/`. When you update the standards, you run one script and commit in each repo.
-
-```
-escritha-skills/cursor/api.mdc
-        │
-        └──→  escritha-api/.cursor/rules/escritha-standards.mdc  (git-tracked)
-                escritha-app/.cursor/rules/escritha-standards.mdc (git-tracked)
-                escritha-book/.cursor/rules/escritha-standards.mdc (git-tracked)
-```
+> ⚠️ **Important:** The folder name `escritha-standards` must match `name: escritha-standards`
+> inside `SKILL.md`. Cursor uses this to index the skill. Never rename one without the other.
 
 ---
 
-## First-time setup (do this once)
+## Two complementary mechanisms
 
-### 1. Clone all four repos as siblings
+This repo provides two things that work together:
 
-Your local folder layout must look like this:
+| Mechanism | File | Purpose |
+|---|---|---|
+| **Agent Skill** | `skills/escritha-standards/SKILL.md` | Teaches the AI *what* the project standards are |
+| **Cursor Rule** | `cursor/<module>.mdc` | Tells Cursor *when* to apply those standards |
+
+Install both for the best experience.
+
+---
+
+## Installing the Agent Skill
+
+The skill can be installed globally (works across all your projects) or per-project.
+
+### Option 1 — Global install (recommended for all Escritha developers)
+
+```bash
+mkdir -p ~/.cursor/skills
+git clone https://github.com/<your-org>/escritha-skills.git /tmp/escritha-skills
+cp -r /tmp/escritha-skills/skills/escritha-standards ~/.cursor/skills/escritha-standards
+```
+
+Restart Cursor after installing.
+
+### Option 2 — Project-level install (per repo)
+
+Run this inside each repo you want the skill active in (`escritha-api`, `escritha-app`, or `escritha-book`):
+
+```bash
+mkdir -p .cursor/skills
+cp -r /path/to/escritha-skills/skills/escritha-standards .cursor/skills/escritha-standards
+```
+
+### Option 3 — Install via Cursor UI
+
+1. Open Cursor
+2. Go to **Settings → Rules**
+3. Click **Remote Rule (GitHub)**
+4. Enter: `https://github.com/<your-org>/escritha-skills`
+5. Cursor will discover the skill automatically from the `skills/` folder
+
+### Verify the skill is loaded
+
+After installing, restart Cursor and open any chat. Type:
 
 ```
-~/projects/
+@escritha-standards
+```
+
+If the skill appears as a suggestion, it is installed correctly.
+
+---
+
+## Installing the Cursor Rules (per repo, via git)
+
+Rules are the `.mdc` files that tell Cursor which standards to apply per module.
+They live inside each repo at `.cursor/rules/` and are committed to git — so every developer gets them automatically on clone.
+
+### First-time setup
+
+Make sure all four repos are **siblings** in the same parent folder:
+
+```
+~/your-projects/
 ├── escritha-api/
 ├── escritha-app/
 ├── escritha-book/
-└── escritha-skills/     ← clone this repo here
+└── escritha-skills/     ← run the script from here
 ```
 
-If they are in different locations, edit the paths at the top of `sync-rules.sh`.
-
-### 2. Run the sync script
+Then run:
 
 ```bash
 cd escritha-skills
@@ -64,7 +110,7 @@ chmod +x sync-rules.sh
 ./sync-rules.sh
 ```
 
-You will see:
+Output:
 ```
 🔄  Syncing Cursor rules from escritha-skills...
 ✅  escritha-api  →  .cursor/rules/escritha-standards.mdc
@@ -74,7 +120,7 @@ You will see:
 🎉  Done!
 ```
 
-### 3. Commit the generated files in each repo
+Then commit in each repo:
 
 ```bash
 cd ../escritha-api  && git add .cursor/rules/ && git commit -m "chore: add cursor standards rule"
@@ -82,54 +128,47 @@ cd ../escritha-app  && git add .cursor/rules/ && git commit -m "chore: add curso
 cd ../escritha-book && git add .cursor/rules/ && git commit -m "chore: add cursor standards rule"
 ```
 
-From this point on, any developer who clones one of those repos gets the rules automatically — no extra setup needed.
-
----
-
-## Enabling the rule in Cursor
-
-The `.mdc` file is picked up automatically by Cursor when it exists in `.cursor/rules/`.
-You can verify it is active:
-
-1. Open the project in Cursor
-2. Press `Cmd+Shift+P` → type **Cursor Settings**
-3. Go to the **Rules** tab
-4. You should see `escritha-standards` listed and enabled
-
-If it shows as disabled, click the toggle to enable it.
-
----
-
-## Updating the standards
-
-1. Edit the relevant file in `escritha-skills/cursor/` (e.g. `api.mdc`)
-2. Run `./sync-rules.sh` from the `escritha-skills` root
-3. Commit and push in each affected repo
-4. Open a PR in `escritha-skills` so the change is reviewed and tracked
-
-**Never edit the `.mdc` files directly inside `escritha-api`, `escritha-app`, or `escritha-book`** — those are generated files. Changes made there will be overwritten the next time `sync-rules.sh` runs.
+From this point on, any developer who clones one of those repos gets the rule automatically — no extra setup needed.
 
 ---
 
 ## New developer checklist
 
 - [ ] Clone `escritha-api`, `escritha-app`, `escritha-book`, and `escritha-skills` as siblings
-- [ ] Open the Cursor workspace (`.code-workspace` file if available, or open the folder you want)
-- [ ] Verify the rule is active in Cursor Settings → Rules → `escritha-standards`
+- [ ] Install the Agent Skill globally: copy `skills/escritha-standards` to `~/.cursor/skills/`
+- [ ] Restart Cursor
+- [ ] Verify the skill loads: type `@escritha-standards` in any Cursor chat
+- [ ] Verify the rule is active: Cursor Settings → Rules → `escritha-standards` toggled on
 - [ ] Done — the AI will now follow project standards automatically
+
+---
+
+## Updating the standards
+
+1. Edit the relevant file in `escritha-skills/cursor/` or `escritha-skills/skills/escritha-standards/`
+2. For rule changes: run `./sync-rules.sh` and commit in each affected repo
+3. For skill changes: developers re-run the install command or pull the latest and re-copy
+4. Open a PR in `escritha-skills` so changes are reviewed and tracked
+
+**Never edit `.mdc` files directly inside `escritha-api`, `escritha-app`, or `escritha-book`** — those are generated. Changes made there will be overwritten the next time `sync-rules.sh` runs.
 
 ---
 
 ## FAQ
 
-**Do I need to run `sync-rules.sh` every time I open the project?**
-No. The `.mdc` files are already committed in each repo. You only need to run the script when the standards change.
+**What is the difference between the Skill and the Rule?**
+The Rule (`.mdc`) tells Cursor *when* to pay attention — it activates based on file globs and context.
+The Skill (`SKILL.md`) tells the AI *what* to do — it contains the actual standards, patterns, and examples.
+Together they ensure the AI both triggers at the right moment and knows exactly what to follow.
 
-**Can I add my own personal rules on top of these?**
-Yes. In Cursor Settings → Rules → User Rules, you can add personal preferences. They apply to all your projects and stack on top of the project rule.
+**Do I need to re-run `sync-rules.sh` every time I open the project?**
+No. The `.mdc` files are committed in each repo. Only run the script when the standards change.
 
 **The rule exists but the AI is not following it. What do I do?**
-Open a new chat in Cursor (rules are loaded per session). If it still does not work, go to Cursor Settings → Rules and make sure the toggle next to `escritha-standards` is on.
+Open a new Cursor chat (rules load per session). Then check Cursor Settings → Rules and confirm the toggle is on.
 
-**I updated `api.mdc` but the AI in `escritha-app` still uses the old rules.**
-Each `.mdc` is repo-specific. Changing `api.mdc` only affects `escritha-api`. Update `app.mdc` and re-run `./sync-rules.sh` for `escritha-app`.
+**I updated `api.mdc` but changes are not showing in `escritha-app`.**
+Each `.mdc` is repo-specific. Update `app.mdc` and re-run `./sync-rules.sh` for `escritha-app`.
+
+**Can I rename the skill folder?**
+Only if you also update `name:` in `SKILL.md` to match. Both must always be identical.
